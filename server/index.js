@@ -89,7 +89,7 @@ app.get('/chat', async (req, res) => {
     }
 
     // Make the user query dynamic, e.g., from req.query.q or req.body.query
-    const userQuery = "What is the main topic of this document?";
+    const userQuery = req.query.message
 
     try {
         const embeddings = new GoogleEmbeddings(process.env.GOOGLE_API_KEY);

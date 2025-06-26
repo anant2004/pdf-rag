@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Mic, Search, Palette, User, Bot } from 'lucide-react';
+import { SendHorizonal, Search, User, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { encode } from 'punycode';
 
 interface Message {
     id: string;
@@ -58,36 +59,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         setInputValue('');
         setIsTyping(true);
 
+        try {
+            const encodedMessage = encodeURIComponent(inputValue)
+            const res = await fetch(`http://localhost:8000/chat?message=${encodedMessage}`)
+            const data = await res.json();
+
+            const aiMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                content: data.llmChatResult, // assuming response = { llmresult: "..." }
+                sender: 'ai',
+                timestamp: new Date()
+            }
+
+            setMessages(prev => [...prev, aiMessage]);
+        } catch (error) {
+            console.log("Error fetching AI response:", error);
+        } finally{
+            setIsTyping(false);
+        }
+
         // Custom message handler
         if (onMessageSend) {
             onMessageSend(inputValue);
         }
-
-        // Simulate AI response
-        setTimeout(() => {
-            const aiMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                content: generateAIResponse(inputValue),
-                sender: 'ai',
-                timestamp: new Date()
-            };
-            setMessages(prev => [...prev, aiMessage]);
-            setIsTyping(false);
-        }, 1000 + Math.random() * 2000);
-    };
-
-    const generateAIResponse = (userMessage: string): string => {
-        const responses = [
-            "That's an interesting question! Let me think about that...",
-            "I understand what you're asking. Here's my perspective on that topic...",
-            "Great question! Based on my knowledge, I can tell you that...",
-            "I'd be happy to help you with that. Let me provide some insights...",
-            "That's a thoughtful inquiry. From what I understand...",
-            "I can definitely assist with that. Here's what I think...",
-        ];
-
-        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-        return `${randomResponse} "${userMessage}"`;
     };
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -114,14 +108,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <div className="flex items-center justify-between p-4 border-b border-gray-800">
                 <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                        <Bot className="w-5 h-5 text-white" />
+                        <Brain className="w-5 h-5 text-white" />
                     </div>
                     <h1 className="text-xl font-semibold">AI Assistant</h1>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="sm" className="text-gray-400 hover:text-gray-200">
-                        <Search className="w-4 h-4" />
-                    </Button>
                 </div>
             </div>
 
@@ -137,7 +126,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             {message.sender === 'ai' && (
                                 <Avatar className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600">
                                     <AvatarFallback className="bg-transparent">
-                                        <Bot className="w-4 h-4 text-white" />
+                                        <Brain className="w-4 h-4 text-white" />
                                     </AvatarFallback>
                                 </Avatar>
                             )}
@@ -148,7 +137,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                     : 'bg-[#000] text-gray-100'
                                     }`}
                             >
-                                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                                <p className="text-base leading-relaxed whitespace-pre-wrap">
                                     {message.content}
                                 </p>
 
@@ -168,10 +157,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         <div className="flex items-start space-x-4">
                             <Avatar className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600">
                                 <AvatarFallback className="bg-transparent">
-                                    <Bot className="w-4 h-4 text-white" />
+                                    <Brain className="w-4 h-4 text-white" />
                                 </AvatarFallback>
                             </Avatar>
-                            <div className="bg-gray-800 rounded-2xl px-4 py-3">
+                            <div className="bg-[#000] rounded-2xl px-4 py-3">
                                 <div className="flex space-x-1">
                                     <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
                                     <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
@@ -196,18 +185,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                 onChange={(e) => setInputValue(e.target.value)}
                                 onKeyPress={handleKeyPress}
                                 placeholder="Ask me anything..."
-                                className="flex-1 min-h-[20px] max-h-[120px] bg-transparent border-0 focus:outline-none focus:ring-0 focus:border-0 focus:shadow-none resize-none text-gray-100 placeholder-gray-500"
+                                className="text-base flex-1 min-h-[20px] max-h-[120px] bg-transparent border-0 focus:ring-0 focus:outline-none resize-none text-gray-100 placeholder-gray-500"
                                 rows={1}
                             />
 
                             <div className="flex items-center space-x-2 shrink-0">
+
                                 <Button
                                     onClick={handleSendMessage}
                                     disabled={!inputValue.trim() || isTyping}
                                     size="sm"
                                     className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    <Send className="w-4 h-4" />
+                                    <SendHorizonal className="w-4 h-4" />
                                 </Button>
                             </div>
                         </div>

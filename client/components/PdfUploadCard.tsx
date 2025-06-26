@@ -43,8 +43,6 @@ const FileUploadComponent: React.FC = () => {
         <h3>Upload Pdf File</h3>
         <UploadIcon />
       </div>
-
-      {/* ✅ Hidden input element */}
       <input
         ref={inputRef}
         type="file"
