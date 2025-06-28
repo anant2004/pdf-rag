@@ -4,8 +4,22 @@ import { BackgroundBeams } from "./ui/background-beams";
 import { Sparkles } from "lucide-react";
 import { MessageCircle } from "lucide-react";
 import { UploadIcon } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 
 export function BackgroundBeamsDemo() {
+
+  const { isSignedIn } = useAuth();
+  const router = useRouter();
+
+  const handleClick = () => {
+    if (isSignedIn) {
+      router.push("/chat");
+    } else {
+      router.push("/login");
+    }
+  };
+  
   return (
     <div className="min-h-screen w-full bg-neutral-950 relative flex flex-col items-center justify-center antialiased overflow-hidden">
       <BackgroundBeams />
@@ -23,14 +37,18 @@ export function BackgroundBeamsDemo() {
           Transform any PDF into an intelligent conversation. Upload your documents and get instant answers, summaries, and insights powered by advanced AI technology.
         </p>
         <div>
-          <button className="relative inline-flex h-12 min-w-[180px] overflow-hidden rounded-xl p-[1px] focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50 transition-all duration-300 hover:scale-105 hover:shadow-2xl">
+          <button
+            onClick={handleClick}
+            className="relative inline-flex h-12 min-w-[180px] overflow-hidden rounded-xl p-[1px] focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50 transition-all duration-300 hover:scale-105 hover:shadow-2xl"
+          >
             <span className="absolute inset-[-1000%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2CBFF_0%,#393BB2_50%,#E2CBFF_100%)]" />
             <span className="inline-flex h-full w-full cursor-pointer items-center justify-center rounded-xl bg-slate-950 px-6 py-2 text-lg font-semibold text-white backdrop-blur-3xl">
               Get Started
             </span>
           </button>
+
         </div>
-        
+
         <div className="flex flex-col md:flex-row gap-4 items-center justify-center mt-8">
           <div className="inline-flex items-center px-4 py-2 bg-white/80 backdrop-blur-sm rounded-full text-sm font-medium text-neutral-900 transition-all duration-300 transform hover:scale-105 hover:bg-white shadow-lg cursor-pointer">
             <UploadIcon className="h-4 w-4 mr-2 text-neutral-700 animate-pulse group-hover:animate-spin" />

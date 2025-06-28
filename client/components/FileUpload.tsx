@@ -1,11 +1,14 @@
 "use client";
 import React, { useState } from "react";
 import { FileUpload } from "@/components/ui/file-upload";
+import { useAuth } from "@clerk/nextjs";
 
 export function FileUploadDemo() {
   const [files, setFiles] = useState<File[]>([]);
+  const { getToken } = useAuth();
 
   const handleFileUpload = async (files: File[]) => {
+    const token = await getToken();
     const file = files[0];
     if (!file) return;
 
@@ -17,6 +20,9 @@ export function FileUploadDemo() {
     try {
       const response = await fetch("http://localhost:8000/upload/pdf", {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
         body: formdata,
       });
 

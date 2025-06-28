@@ -6,7 +6,8 @@ import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { CharacterTextSplitter } from "@langchain/textsplitters";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import 'dotenv/config'; 
+import fs from 'fs';
+import 'dotenv/config';
 
 class GoogleEmbeddings {
     constructor(apiKey) {
@@ -48,13 +49,17 @@ connection.on("error", (err) => {
     console.error("Redis connection error in Worker:", err);
 });
 
-// 🧑‍🏭 Worker logic
 const worker = new Worker(
     "file-upload-queue",
     async (job) => {
-        const data = job.data;
+        console.log("Job received : ", job.data)
+        const { userId, filename, path } = job.data;
 
-        const loader = new PDFLoader(data.path);
+        if (!fs.existsSync(path)) {
+            throw new Error(`File does not exist at path: ${path}`);
+        }
+
+        const loader = new PDFLoader(path);
         const docs = await loader.load();
 
         const textSplitter = new CharacterTextSplitter({
@@ -71,11 +76,20 @@ const worker = new Worker(
 
         // Optional: truncate overly long chunks to 8000 characters
         const truncatedDocs = cleanedDocs.map((doc) => {
-            return new Document({
+            return {
                 pageContent: doc.pageContent.trim().slice(0, 8000),
-                metadata: doc.metadata,
-            });
+                metadata: {
+                    userId,
+                    filename,
+                    pdf: doc.metadata?.pdf,
+                    loc: doc.metadata?.loc,
+                    source: doc.metadata?.source
+                }
+            };
         });
+
+        console.log("Sample metadata of a document before adding to Qdrant:");
+        console.log(truncatedDocs[0].metadata);
 
         const embeddings = new GoogleEmbeddings(process.env.GOOGLE_API_KEY);
 

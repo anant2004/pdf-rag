@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { encode } from 'punycode';
+import { UserButton, useAuth } from '@clerk/nextjs';
 
 interface Message {
     id: string;
@@ -36,6 +36,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const [isTyping, setIsTyping] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const { getToken } = useAuth();   
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -60,8 +61,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         setIsTyping(true);
 
         try {
+            const token = await getToken()
             const encodedMessage = encodeURIComponent(inputValue)
-            const res = await fetch(`http://localhost:8000/chat?message=${encodedMessage}`)
+            const res = await fetch(`http://localhost:8000/chat?message=${encodedMessage}`,{
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            })
             const data = await res.json();
 
             const aiMessage: Message = {
@@ -107,10 +113,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-800">
                 <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                        <Brain className="w-5 h-5 text-white" />
-                    </div>
-                    <h1 className="text-xl font-semibold">AI Assistant</h1>
+                    <h1 className="text-xl font-semibold">PDFChat AI</h1>
+                </div>
+                <div>
+                    <UserButton
+                        appearance={{
+                            elements: {
+                                userButtonAvatarBox: 'w-8 h-8',
+                                userButtonAvatarImage: 'rounded-full',
+                                userButtonProfileLink: 'hidden',
+                                userButtonManageAccount: 'hidden'
+                            }
+                        }}
+                    />
                 </div>
             </div>
 

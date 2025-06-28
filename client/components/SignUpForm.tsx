@@ -7,6 +7,8 @@ import { Input } from "./ui/input";
 import { cn } from "@/lib/utils";
 import { IconBrandGoogle } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
+import { UserButton } from "@clerk/nextjs";
+import { BackgroundBeams } from "./ui/background-beams";
 
 // Bottom gradient component
 const BottomGradient = () => (
@@ -45,15 +47,16 @@ export function SignupFormDemo() {
 
             // Step 1: Create the user
             await signUp.create({
-                emailAddress: email,    
+                emailAddress: email,
                 password,
             });
 
             // Step 3: Set active session and redirect
             await setActive({ session: signUp.createdSessionId });
-            router.push("/dashboard"); // or your homepage
+            router.push("/chat"); // or your homepage
         } catch (err: any) {
-            setError(err.errors?.[0]?.message || "Sign-up failed");
+            console.error("Sign-up error:", err);
+            console.log(err.errors?.[0]?.message || "Sign-up failed");
         }
     };
 
@@ -73,6 +76,8 @@ export function SignupFormDemo() {
 
     return (
         <div className="shadow-input mx-auto w-full max-w-md rounded-none bg-white p-4 md:rounded-2xl md:p-8 dark:bg-black">
+            <UserButton/>
+            <h1 className="text-4xl font-bold">Sign-Up</h1>
             <form className="my-8" onSubmit={handleSubmit}>
                 <LabelInputContainer className="mb-4">
                     <Label htmlFor="email">Email Address</Label>
