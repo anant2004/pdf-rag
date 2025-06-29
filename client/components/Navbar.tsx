@@ -1,4 +1,5 @@
 "use client";
+
 import {
   Navbar,
   NavBody,
@@ -11,38 +12,31 @@ import {
   MobileNavMenu,
 } from "@/components/ui/resizable-navbar";
 import { useState } from "react";
- 
+import { useUser, UserButton } from "@clerk/nextjs";
+
 export function NavbarDemo() {
-  const navItems = [
-    {
-      name: "Features",
-      link: "#features",
-    },
-    {
-      name: "Pricing",
-      link: "#pricing",
-    },
-    {
-      name: "Contact",
-      link: "#contact",
-    },
-  ];
- 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
- 
+  const { user, isSignedIn } = useUser();
+
   return (
     <div className="relative w-full">
       <Navbar>
         {/* Desktop Navigation */}
         <NavBody>
           <NavbarLogo />
-          <NavItems items={navItems} />
+          {/* No NavItems */}
           <div className="flex items-center gap-4">
-            <NavbarButton variant="primary" href="/login">Sign In</NavbarButton>
-            <NavbarButton variant="primary" href="/register">Sign Up</NavbarButton>
+            {isSignedIn ? (
+              <UserButton/>
+            ) : (
+              <>
+                <NavbarButton variant="primary" href="/login">Sign In</NavbarButton>
+                <NavbarButton variant="primary" href="/register">Sign Up</NavbarButton>
+              </>
+            )}
           </div>
         </NavBody>
- 
+
         {/* Mobile Navigation */}
         <MobileNav>
           <MobileNavHeader>
@@ -52,43 +46,45 @@ export function NavbarDemo() {
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             />
           </MobileNavHeader>
- 
+
           <MobileNavMenu
             isOpen={isMobileMenuOpen}
             onClose={() => setIsMobileMenuOpen(false)}
           >
-            {navItems.map((item, idx) => (
-              <a
-                key={`mobile-link-${idx}`}
-                href={item.link}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="relative text-neutral-600 dark:text-neutral-300"
-              >
-                <span className="block">{item.name}</span>
-              </a>
-            ))}
-            <div className="flex w-full flex-col gap-4">
-              <NavbarButton
-                onClick={() => setIsMobileMenuOpen(false)}
-                variant="primary"
-                className="w-full"
-                href="/login"
-              >
-                Sign In
-              </NavbarButton>
-              <NavbarButton
-                onClick={() => setIsMobileMenuOpen(false)}
-                variant="primary"
-                className="w-full"
-                href="/register"
-              >
-                Sign Up
-              </NavbarButton>
-            </div>
+            {isSignedIn ? (
+              <div className="flex items-center px-4 py-2">
+                <img
+                  src={user.imageUrl}
+                  alt="User"
+                  className="h-10 w-10 rounded-full"
+                />
+                <div className="ml-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  {user.fullName || user.username || "Account"}
+                </div>
+              </div>
+            ) : (
+              <div className="flex w-full flex-col gap-4 px-4 py-2">
+                <NavbarButton
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  variant="primary"
+                  className="w-full"
+                  href="/login"
+                >
+                  Sign In
+                </NavbarButton>
+                <NavbarButton
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  variant="primary"
+                  className="w-full"
+                  href="/register"
+                >
+                  Sign Up
+                </NavbarButton>
+              </div>
+            )}
           </MobileNavMenu>
         </MobileNav>
-      </Navbar> 
-      {/* Navbar */}
+      </Navbar>
     </div>
   );
 }

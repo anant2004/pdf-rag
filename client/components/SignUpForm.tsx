@@ -109,7 +109,7 @@ export function SignupFormDemo() {
                     Sign up &rarr;
                     <BottomGradient />
                 </button>
-
+                <div className="mt-4 text-sm">Already a member? <a href="/login" className="text-blue-400">Login</a></div>
                 <div className="my-8 h-[1px] w-full bg-gradient-to-r from-transparent via-neutral-300 to-transparent dark:via-neutral-700" />
 
                 <div className="flex flex-col space-y-4">

@@ -23,40 +23,40 @@ export const FileUpload = ({
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (newFiles: File[]) => {
+  const handleFileChange = async (newFiles: File[]) => {
     setFiles(newFiles);
-    onChange && onChange(newFiles);
     setUploadStatus("idle");
+    onChange && onChange(newFiles);
+
+    for (const file of newFiles) {
+      const formdata = new FormData();
+      formdata.append("pdf", file);
+
+      setUploadStatus("uploading");
+
+      try {
+        const response = await fetch("http://localhost:8000/upload/pdf", {
+          method: "POST",
+          body: formdata,
+        });
+
+        if (!response.ok) throw new Error("Upload failed");
+
+        setUploadStatus("success");
+      } catch (err) {
+        console.error("Upload error:", err);
+        setUploadStatus("error");
+      }
+    }
   };
 
   const handleClick = () => {
     fileInputRef.current?.click();
   };
 
-  const handleUpload = async () => {
-    if (!files.length) return;
-    const formdata = new FormData();
-    formdata.append("pdf", files[0]);
-
-    setUploadStatus("uploading");
-
-    try {
-      const response = await fetch("http://localhost:8000/upload/pdf", {
-        method: "POST",
-        body: formdata,
-      });
-
-      if (!response.ok) throw new Error("Upload failed");
-
-      setUploadStatus("success");
-    } catch (err) {
-      console.error("Upload error:", err);
-      setUploadStatus("error");
-    }
-  };
 
   const { getRootProps, isDragActive } = useDropzone({
-    multiple: false,
+    multiple: true,
     noClick: true,
     onDrop: handleFileChange,
     onDropRejected: (error) => {
@@ -75,6 +75,7 @@ export const FileUpload = ({
           ref={fileInputRef}
           id="file-upload-handle"
           type="file"
+          multiple
           onChange={(e) => handleFileChange(Array.from(e.target.files || []))}
           className="hidden"
         />
@@ -153,29 +154,19 @@ export const FileUpload = ({
             )}
           </div>
 
-          {/* Upload Button */}
-          {files.length > 0 && (
-            <div
-              onClick={(e) => e.stopPropagation()} // ✅ Prevents triggering file input
-            >
-              <button
-                onClick={handleUpload}
-                className="mt-4 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded"
-              >
-                Upload
-              </button>
-            </div>
-          )}
-
           {/* Upload Status */}
-          {uploadStatus === "uploading" && (
-            <p className="mt-2 text-sm text-yellow-500">Uploading...</p>
-          )}
-          {uploadStatus === "success" && (
-            <p className="mt-2 text-sm text-green-500">Upload complete!</p>
-          )}
-          {uploadStatus === "error" && (
-            <p className="mt-2 text-sm text-red-500">Upload failed. Try again.</p>
+          {(files.length > 0 || uploadStatus !== "idle") && (
+            <div className="mt-2">
+              {uploadStatus === "uploading" && (
+                <p className="text-sm text-yellow-500">Uploading...</p>
+              )}
+              {uploadStatus === "success" && (
+                <p className="text-sm text-green-500">Upload complete!</p>
+              )}
+              {uploadStatus === "error" && (
+                <p className="text-sm text-red-500">Upload failed. Try again.</p>
+              )}
+            </div>
           )}
         </div>
       </motion.div>
@@ -196,8 +187,8 @@ export function GridPattern() {
             <div
               key={`${col}-${row}`}
               className={`w-10 h-10 flex shrink-0 rounded-[2px] ${index % 2 === 0
-                  ? "bg-gray-50 dark:bg-neutral-950"
-                  : "bg-gray-50 dark:bg-neutral-950 shadow-[0px_0px_1px_3px_rgba(255,255,255,1)_inset] dark:shadow-[0px_0px_1px_3px_rgba(0,0,0,1)_inset]"
+                ? "bg-gray-50 dark:bg-neutral-950"
+                : "bg-gray-50 dark:bg-neutral-950 shadow-[0px_0px_1px_3px_rgba(255,255,255,1)_inset] dark:shadow-[0px_0px_1px_3px_rgba(0,0,0,1)_inset]"
                 }`}
             />
           );

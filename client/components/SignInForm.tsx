@@ -108,6 +108,7 @@ export function SigninFormDemo() {
           Sign in &rarr;
           <BottomGradient />
         </button>
+        <div className="mt-4 text-sm">Don't have an acccout? <a href="/register" className="text-blue-400">Sign Up</a></div>
 
         <div className="my-8 h-[1px] w-full bg-gradient-to-r from-transparent via-neutral-300 to-transparent dark:via-neutral-700" />
 
