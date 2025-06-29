@@ -4,8 +4,8 @@ import multer from 'multer';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { QdrantVectorStore } from '@langchain/qdrant';
-import { QdrantClient } from "@qdrant/js-client-rest";
+import { Pinecone } from '@pinecone-database/pinecone';
+import { PineconeStore } from "@langchain/pinecone"; 
 import { requireAuth } from "@clerk/express";
 import 'dotenv/config';
 
@@ -34,24 +34,6 @@ class GoogleEmbeddings {
         return results;
     }
 }
-const qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
-
-async function setupQdrantIndex() {
-
-    try {
-        await qdrant.createPayloadIndex('pdf-docs', {
-            field_name: 'userId',
-            field_schema: 'keyword', // or 'string'
-        });
-        console.log("Payload index on 'userId' created.");
-    } catch (err) {
-        if (err.message.includes("already exists")) {
-            console.log("ℹPayload index on 'userId' already exists.");
-        } else {
-            console.error("Failed to create payload index:", err);
-        }
-    }
-}
 
 const connection = new IORedis({
     host: "localhost",
@@ -67,8 +49,6 @@ connection.on("connect", () => {
 
 const queue = new Queue("file-upload-queue", { connection });
 
-
-
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         cb(null, 'uploads/')
@@ -83,8 +63,6 @@ const upload = multer({ storage: storage });
 
 const app = express();
 app.use(cors());
-
-await setupQdrantIndex();
 
 app.get('/', (req, res) => {
     return res.json({ message: "Everything is working fine!" });
@@ -120,16 +98,15 @@ app.post('/upload/pdf', upload.single('pdf'), requireAuth(), async (req, res) =>
 app.get('/chat', requireAuth(), async (req, res) => {
     console.log("/chat endpoint hit")
 
-    const { userId } = await req.auth;
+    const { userId } = req.auth; 
     console.log("user id", userId)
     console.log("Type of userId:", typeof userId);
 
-    if (!process.env.GOOGLE_API_KEY || !process.env.QDRANT_URL) {
-        console.error("Missing GOOGLE_API_KEY or QDRANT_URL environment variables.");
+    if (!process.env.GOOGLE_API_KEY || !process.env.PINECONE_INDEX || !process.env.PINECONE_ENVIRONMENT) {
+        console.error("Missing GOOGLE_API_KEY, PINECONE_INDEX, or PINECONE_ENVIRONMENT environment variables.");
         return res.status(500).json({ message: "Server configuration error: API keys missing." });
     }
 
-    // Make the user query dynamic, e.g., from req.query.q or req.body.query
     const userQuery = req.query.message;
 
     console.log('User query:', userQuery);
@@ -141,34 +118,38 @@ app.get('/chat', requireAuth(), async (req, res) => {
     try {
         const embeddings = new GoogleEmbeddings(process.env.GOOGLE_API_KEY);
 
-        const vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
-            url: process.env.QDRANT_URL,
-            collectionName: "pdf-docs",
+        const pinecone = new Pinecone();
+        const index = pinecone.Index(process.env.PINECONE_INDEX);
+
+        const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
+            pineconeIndex: index,
+            namespace: userId 
         });
 
         const retriever = vectorStore.asRetriever({
             k: 2,
-            filter: {
-                userId: userId
-            }
+            // When using Pinecone namespaces for userId isolation, you typically
+            // *do not* need an additional filter on `userId` in the `asRetriever` options,
+            // because the `namespace` parameter already restricts the search scope.
+            // If you had other metadata fields you wanted to filter on (e.g., file type),
+            // you would add them here.
+            // filter: { /* other_metadata_field: "value" */ }
         });
 
         //console.log("Retreiver: ", retriever)
 
         const retrievedDocs = await retriever.invoke(userQuery);
         if (retrievedDocs.length === 0) {
-            console.warn("No documents retrieved for user:", userId);
+            console.warn("No documents retrieved for user:", userId, "in namespace:", userId);
         }
 
         const contextString = retrievedDocs.map(doc => doc.pageContent).join("\n\n---\n\n");
-        console.log("Context string being passed to LLM:", contextString);
+        console.log("Context string being passed to LLM (truncated for brevity):", contextString.substring(0, 500) + '...'); // Truncate for log readability
 
         const SYSTEM_PROMPT = `Context:${contextString}`;
 
-
         const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
 
         const chatResult = await model.generateContent({
             contents: [
@@ -194,4 +175,3 @@ app.get('/chat', requireAuth(), async (req, res) => {
 app.listen(8000, () => {
     console.log('Server is running at http://localhost:8000');
 });
-

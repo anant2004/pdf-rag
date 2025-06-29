@@ -3,7 +3,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { QdrantVectorStore } from "@langchain/qdrant";
 import 'dotenv/config';
 
-const GOOGLE_API_KEY = "AIzaSyBNA-R1FMeIZ8YO37lfErFXkLagR83XEAs"
 const QDRANT_URL = "http://localhost:6333"
 
 class GoogleEmbeddings {
