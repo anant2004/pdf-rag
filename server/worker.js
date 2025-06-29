@@ -36,10 +36,9 @@ class GoogleEmbeddings {
 }
 
 // Redis connection for BullMQ (remains unchanged)
-const connection = new IORedis({
-    host: "localhost",
-    port: 6379,
-    maxRetriesPerRequest: null,
+const connection = new IORedis(process.env.REDIS_URL, {
+  tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
+  maxRetriesPerRequest: null,
 });
 
 connection.on("connect", () => {

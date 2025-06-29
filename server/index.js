@@ -35,9 +35,8 @@ class GoogleEmbeddings {
     }
 }
 
-const connection = new IORedis({
-    host: "localhost",
-    port: 6379,
+const connection = new IORedis(process.env.REDIS_URL, {
+  tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
 });
 
 connection.on("error", (err) => {
