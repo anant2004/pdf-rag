@@ -37,6 +37,15 @@ class GoogleEmbeddings {
 
 const connection = new IORedis(process.env.REDIS_URL, {
   tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+  keepAlive: 10000,
+  retryStrategy: times => {
+    const delay = Math.min(times * 50, 2000); // Exponential backoff up to 2 seconds
+    console.warn(`Redis reconnecting (attempt ${times}). Retrying in ${delay}ms...`);
+    return delay;
+  },
+  pingInterval: 5000
 });
 
 connection.on("error", (err) => {
