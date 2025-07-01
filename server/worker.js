@@ -45,8 +45,7 @@ const connection = new IORedis(process.env.REDIS_URL, {
         const delay = Math.min(times * 50, 2000); // Exponential backoff up to 2 seconds
         console.warn(`Redis reconnecting (attempt ${times}). Retrying in ${delay}ms...`);
         return delay;
-    },
-    pingInterval: 5000
+    }
 });
 
 connection.on("connect", () => {

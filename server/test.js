@@ -1,274 +1,103 @@
-import express from 'express';
-import cors from 'cors';
-import multer from 'multer';
-import { Queue, Worker } from 'bullmq';
-import IORedis from 'ioredis';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Pinecone } from '@pinecone-database/pinecone';
-import { PineconeStore } from "@langchain/pinecone";
-import { requireAuth } from "@clerk/express";
-import 'dotenv/config'; // Ensure this is at the very top to load env vars
+// Function to check if the puzzle is solvable with the given character assignments
+function solvePuzzleHelper(a, b, sum, pos, carry, charToDigit, usedDigits) {
+    // Base case: if all positions are processed
+    if (pos >= sum.length) {
+        return carry === 0 ? 1 : 0;
+    }
 
-// Imports specifically for the worker functionality
-import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
-import { CharacterTextSplitter } from "@langchain/textsplitters";
-import { Document } from "@langchain/core/documents";
-import fs from 'fs'; // For file system operations (e.g., deleting uploaded files)
+    // Calculate sum at current position
+    let sumVal = carry;
+    let aIdx = a.length - 1 - pos;
+    let bIdx = b.length - 1 - pos;
+    let sumIdx = sum.length - 1 - pos;
 
-class GoogleEmbeddings {
-  constructor(apiKey) {
-    this.model = new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: "embedding-001" });
-  }
+    // Add digits from a and b if available and assigned
+    if (aIdx >= 0 && charToDigit[a[aIdx]] !== undefined) {
+        sumVal += charToDigit[a[aIdx]];
+    } else if (aIdx >= 0) {
+        return 0; // Character not yet assigned, prune
+    }
+    if (bIdx >= 0 && charToDigit[b[bIdx]] !== undefined) {
+        sumVal += charToDigit[b[bIdx]];
+    } else if (bIdx >= 0) {
+        return 0; // Character not yet assigned, prune
+    }
 
-  async embedQuery(text) {
-    const result = await this.model.embedContent({
-      content: { parts: [{ text }] },
-    });
-    return result.embedding.values;
-  }
+    let sumChar = sum[sumIdx];
 
-  async embedDocuments(texts) {
-    const results = await Promise.all(
-      texts.map(async (text) => {
-        const result = await this.model.embedContent({
-          content: { parts: [{ text }] },
-        });
-        return result.embedding.values;
-      })
-    );
-    return results;
-  }
+    // If sumChar is assigned, check if it matches
+    if (charToDigit[sumChar] !== undefined) {
+        if (charToDigit[sumChar] !== sumVal % 10) {
+            return 0;
+        }
+        return solvePuzzleHelper(a, b, sum, pos + 1, Math.floor(sumVal / 10), charToDigit, usedDigits);
+    }
+
+    // If sumChar is not assigned, try to assign it
+    let digit = sumVal % 10;
+    if (usedDigits[digit]) {
+        return 0; // Digit already used
+    }
+
+    // Assign and recurse
+    charToDigit[sumChar] = digit;
+    usedDigits[digit] = true;
+    let count = solvePuzzleHelper(a, b, sum, pos + 1, Math.floor(sumVal / 10), charToDigit, usedDigits);
+    // Backtrack
+    charToDigit[sumChar] = undefined;
+    usedDigits[digit] = false;
+    return count;
 }
 
-const connection = new IORedis(process.env.REDIS_URL, {
-  tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  keepAlive: 10000,
-  retryStrategy: times => {
-    const delay = Math.min(times * 50, 2000);
-    console.warn(`Redis reconnecting (attempt ${times}). Retrying in ${delay}ms...`);
-    return delay;
-  },
-  pingInterval: 5000
-});
-
-connection.on("error", (err) => {
-  console.error("Redis connection error (main process/worker):", err);
-});
-connection.on("connect", () => {
-  console.log("Redis connected (main process/worker)");
-});
-
-
-const queue = new Queue("file-upload-queue", { connection });
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    fs.mkdirSync('./uploads', { recursive: true });
-    cb(null, 'uploads/');
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.originalname + '-' + uniqueSuffix);
-  }
-});
-
-const upload = multer({ storage: storage });
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-app.get('/', (req, res) => {
-  return res.json({ message: "Everything is working fine!" });
-});
-
-app.post('/upload/pdf', upload.single('pdf'), requireAuth(), async (req, res) => {
-  console.log("/upload/pdf endpoint hit");
-  console.log("file: ", req.file);
-  const { userId } = req.auth;
-
-  if (!userId) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  if (!req.file) {
-    return res.status(400).json({ message: "No file uploaded." });
-  }
-
-  try {
-    console.log('File received:', req.file);
-    await queue.add('pdf-upload', {
-      filename: req.file.filename,
-      path: req.file.path,
-      userId
-    });
-
-    console.log('Job added to queue');
-
-    return res.status(200).json({ message: 'File uploaded successfully' });
-  } catch (err) {
-    console.error('Error handling upload:', err);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.get('/chat', requireAuth(), async (req, res) => {
-  console.log("/chat endpoint hit");
-
-  const { userId } = req.auth;
-  console.log("user id", userId);
-  console.log("Type of userId:", typeof userId);
-
-  if (!process.env.GOOGLE_API_KEY || !process.env.PINECONE_INDEX || !process.env.PINECONE_ENVIRONMENT) {
-    console.error("Missing GOOGLE_API_KEY, PINECONE_INDEX, or PINECONE_ENVIRONMENT environment variables.");
-    return res.status(500).json({ message: "Server configuration error: API keys missing." });
-  }
-
-  const userQuery = req.query.message;
-
-  console.log('User query:', userQuery);
-
-  if (!userQuery || typeof userQuery !== 'string' || userQuery.trim() === '') {
-    return res.status(400).json({ message: "Missing or empty 'message' query parameter." });
-  }
-
-  try {
-    const embeddings = new GoogleEmbeddings(process.env.GOOGLE_API_KEY);
-
-    const pinecone = new Pinecone();
-    const index = pinecone.Index(process.env.PINECONE_INDEX);
-
-    const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
-      pineconeIndex: index,
-      namespace: userId
-    });
-
-    const retriever = vectorStore.asRetriever({
-      k: 2,
-    });
-
-    const retrievedDocs = await retriever.invoke(userQuery);
-    if (retrievedDocs.length === 0) {
-      console.warn("No documents retrieved for user:", userId, "in namespace:", userId);
+// Function to assign digits to unique characters and count valid assignments
+function assignDigits(a, b, sum, index, order, charToDigit, usedDigits, leadingChars) {
+    if (index === order.length) {
+        // Only enforce leading zero constraint for b[0] and sum[0]
+        if ((b[0] && charToDigit[b[0]] === 0) || (sum[0] && charToDigit[sum[0]] === 0)) {
+            return 0;
+        }
+        return solvePuzzleHelper(a, b, sum, 0, 0, charToDigit, usedDigits);
     }
 
-    const contextString = retrievedDocs.map(doc => doc.pageContent).join("\n\n---\n\n");
-    console.log("Context string being passed to LLM (truncated for brevity):", contextString.substring(0, 500) + '...');
+    let ch = order[index];
+    let totalSolutions = 0;
 
-    const SYSTEM_PROMPT = `Context:${contextString}`;
+    // Try digits 0-9 for non-leading characters, 1-9 for b[0] and sum[0]
+    let startDigit = (ch === b[0] || ch === sum[0]) ? 1 : 0;
+    for (let digit = startDigit; digit < 10; digit++) {
+        if (!usedDigits[digit]) {
+            charToDigit[ch] = digit;
+            usedDigits[digit] = true;
+            totalSolutions += assignDigits(a, b, sum, index + 1, order, charToDigit, usedDigits, leadingChars);
+            usedDigits[digit] = false;
+            charToDigit[ch] = undefined;
+        }
+    }
+    return totalSolutions;
+}
 
-    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Main function to solve Cryptarithmetic puzzle and count all valid solutions
+function solution(crypt) {
+    let [a, b, sum] = crypt; // Destructure input array
 
-    const chatResult = await model.generateContent({
-      contents: [
-        { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-        { role: "user", parts: [{ text: `Based on the context, answer the following question: "${userQuery}"` }] }
-      ]
-    });
-
-    const llmResponse = chatResult.response.text();
-
-    return res.json({
-      llmChatResult: llmResponse
-    });
-
-  } catch (error) {
-    console.error('Error during chat query:', error);
-    return res.status(500).json({ message: 'Error processing chat query', error: error.message });
-  }
-});
-
-const worker = new Worker(
-  "file-upload-queue",
-  async (job) => {
-    console.log("[Worker] Job received:", job.data);
-    const { userId, filename, path } = job.data;
-
-    if (!fs.existsSync(path)) {
-      console.error(`[Worker] File does not exist at path: ${path}. This is expected if using ephemeral storage without cloud integration.`);
-      throw new Error(`File not found for processing: ${path}. Ensure persistent storage.`);
+    // Quick validation: check number of unique characters and length constraints
+    let uniqueChars = new Set(a + b + sum);
+    if (uniqueChars.size > 10 || sum.length < Math.max(a.length, b.length)) {
+        return 0; // Impossible to solve
     }
 
-    try {
-      const loader = new PDFLoader(path);
-      const docs = await loader.load();
+    // Use array for charToDigit to reduce Map overhead
+    let charToDigit = new Array(128); // ASCII size, assuming letters
+    let usedDigits = new Array(10).fill(false);
+    let order = [...uniqueChars];
+    let leadingChars = new Set([a[0], b[0], sum[0]]);
 
-      const textSplitter = new CharacterTextSplitter({
-        chunkSize: 300,
-        chunkOverlap: 50,
-      });
+    // Sort order to prioritize leading characters for early pruning
+    order.sort((x, y) => {
+        if ((x === b[0] || x === sum[0]) && !(y === b[0] || y === sum[0])) return -1;
+        if (!(x === b[0] || x === sum[0]) && (y === b[0] || y === sum[0])) return 1;
+        return 0;
+    });
 
-      const splitDocs = await textSplitter.splitDocuments(docs);
-
-      const cleanedDocs = splitDocs.filter(
-        (doc) => doc.pageContent && doc.pageContent.trim().length > 0
-      );
-
-      const truncatedDocs = cleanedDocs.map((doc) => {
-        return new Document({
-          pageContent: doc.pageContent.trim().slice(0, 8000),
-          metadata: {
-            userId,
-            filename,
-            pdf: doc.metadata?.pdf,
-            loc: doc.metadata?.loc,
-            source: doc.metadata?.source
-          }
-        });
-      });
-
-      console.log("Sample metadata of a document before adding to Pinecone:");
-      if (truncatedDocs.length > 0) {
-        console.log(truncatedDocs[0].metadata);
-        console.log("Expected Pinecone Namespace:", userId);
-      } else {
-        console.warn("[Worker] No documents to add after splitting and cleaning.");
-        return; // Exit if no documents to process
-      }
-
-      const embeddings = new GoogleEmbeddings(process.env.GOOGLE_API_KEY);
-
-      const pinecone = new Pinecone();
-      const index = pinecone.Index(process.env.PINECONE_INDEX);
-
-      await PineconeStore.fromDocuments(truncatedDocs, embeddings, {
-        pineconeIndex: index,
-        namespace: userId
-      });
-
-      console.log("[Worker] Docs added to Pinecone under namespace:", userId);
-
-      fs.unlink(path, (err) => {
-        if (err) console.error(`[Worker] Error deleting file ${path}:`, err);
-        else console.log(`[Worker] Deleted local file: ${path}`);
-      });
-
-    } catch (workerErr) {
-      console.error(`[Worker] Error processing job ${job.id} for user ${userId}, file ${filename}:`, workerErr);
-      throw workerErr; 
-    }
-
-  },
-  {
-    connection, 
-    concurrency: 1
-  }
-);
-
-worker.on('completed', job => {
-  console.log(`[Worker] Job ${job.id} completed successfully`);
-});
-
-worker.on('failed', (job, err) => {
-  console.error(`[Worker] Job ${job?.id} failed:`, err.message);
-});
-
-console.log("BullMQ Worker integrated and started within the main application process.");
-
-const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`Access at http://localhost:${PORT} (for local testing)`);
-});
+    return assignDigits(a, b, sum, 0, order, charToDigit, usedDigits, leadingChars);
+}
