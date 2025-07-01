@@ -35,7 +35,7 @@ export const FileUpload = ({
       setUploadStatus("uploading");
 
       try {
-        const response = await fetch("http://localhost:8000/upload/pdf", {
+        const response = await fetch("https://pdf-rag-production.up.railway.app/upload/pdf", {
           method: "POST",
           body: formdata,
         });
@@ -75,6 +75,8 @@ export const FileUpload = ({
           ref={fileInputRef}
           id="file-upload-handle"
           type="file"
+          accept=".pdf,application/pdf"
+          capture="environment"
           multiple
           onChange={(e) => handleFileChange(Array.from(e.target.files || []))}
           className="hidden"

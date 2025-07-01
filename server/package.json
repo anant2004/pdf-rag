@@ -4,6 +4,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "start": "mkdir -p uploads && node index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon --watch index.js --exec node index.js",
     "dev:worker": "nodemon --watch worker.js --exec node worker.js"

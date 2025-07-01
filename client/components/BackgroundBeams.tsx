@@ -25,7 +25,7 @@ export function BackgroundBeamsDemo() {
         </div>
 
         {/* Heading */}
-        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl font-extrabold text-center bg-clip-text text-transparent bg-gradient-to-b from-white to-neutral-400 mb-4 font-sans">
+        <h1 className="text-5xl sm:text-6xl md:text-6xl lg:text-6xl xl:text-7xl font-extrabold text-center bg-clip-text text-transparent bg-gradient-to-b from-white to-neutral-400 mb-4 font-sans">
           Chat with Your PDF Documents
         </h1>
 

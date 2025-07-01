@@ -53,17 +53,13 @@ export function NavbarDemo() {
           >
             {isSignedIn ? (
               <div className="flex items-center px-4 py-2">
-                <img
-                  src={user.imageUrl}
-                  alt="User"
-                  className="h-10 w-10 rounded-full"
-                />
+                <UserButton/>
                 <div className="ml-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
                   {user.fullName || user.username || "Account"}
                 </div>
               </div>
             ) : (
-              <div className="flex w-full flex-col gap-4 px-4 py-2">
+              <div className="flex w-full flex-col gap-4 px-4 py-2">  
                 <NavbarButton
                   onClick={() => setIsMobileMenuOpen(false)}
                   variant="primary"

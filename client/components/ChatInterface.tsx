@@ -63,7 +63,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         try {
             const token = await getToken()
             const encodedMessage = encodeURIComponent(inputValue)
-            const res = await fetch(`http://localhost:8000/chat?message=${encodedMessage}`,{
+            const res = await fetch(`https://pdf-rag-production.up.railway.app/chat?message=${encodedMessage}`,{
                 headers: {
                     Authorization: `Bearer ${token}`
                 }
