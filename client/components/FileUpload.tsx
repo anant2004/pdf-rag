@@ -1,7 +1,12 @@
 "use client";
+
 import React, { useState } from "react";
 import { FileUpload } from "@/components/ui/file-upload";
 import { useAuth } from "@clerk/nextjs";
+import { genUploader } from "uploadthing/client";
+import type { UploadRouter } from "@/utils/uploadthing-types";
+
+const { uploadFiles } = genUploader<UploadRouter>();
 
 export function FileUploadDemo() {
   const [files, setFiles] = useState<File[]>([]);
@@ -12,28 +17,29 @@ export function FileUploadDemo() {
     const file = files[0];
     if (!file) return;
 
-    const formdata = new FormData();
-    formdata.append("pdf", file);
-
-    console.log("Starting upload...");
-
     try {
+      console.log("Uploading to UploadThing...");
+      const result = await uploadFiles("pdfUploader", { files: [file] });
+
+      const fileUrl = result[0]?.ufsUrl;
+      const fileName = result[0]?.name;
+      if (!fileUrl) throw new Error("No fileUrl returned from UploadThing");
+
+      console.log("UploadThing URL:", fileUrl);
+
       const response = await fetch("https://pdf-rag-production.up.railway.app/upload/pdf", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        body: formdata,
+        body: JSON.stringify({ fileUrl, fileName }),
       });
 
-      console.log("Response received");
+      if (!response.ok) throw new Error(`Backend upload failed: ${response.status}`);
 
-      if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}`);
-      }
-
-      console.log("File uploaded successfully");
-      setFiles(files); // Optionally store the uploaded file in state
+      console.log("File URL sent to backend successfully");
+      setFiles(files);
     } catch (err) {
       console.error("Upload error:", err);
     }
