@@ -1,10 +1,14 @@
+import axios from "axios";
+import os from "os";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
 import { Worker } from "bullmq";
-import IORedis from "ioredis";
 import { PineconeStore } from "@langchain/pinecone";
 import { Pinecone } from "@pinecone-database/pinecone";
 import { Document } from "@langchain/core/documents";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { CharacterTextSplitter } from "@langchain/textsplitters";
+import { connection } from "./redis.js";
 import { GoogleGenerativeAI } from "@google/generative-ai"; // Google Embeddings remains the same
 import fs from 'fs';
 import 'dotenv/config';
@@ -35,38 +39,29 @@ class GoogleEmbeddings {
     }
 }
 
-// Redis connection for BullMQ (remains unchanged)
-const connection = new IORedis(process.env.REDIS_URL, {
-    tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-    keepAlive: 10000,
-    retryStrategy: times => {
-        const delay = Math.min(times * 50, 2000); // Exponential backoff up to 2 seconds
-        console.warn(`Redis reconnecting (attempt ${times}). Retrying in ${delay}ms...`);
-        return delay;
-    }
-});
-
-connection.on("connect", () => {
-    console.log("Worker connected to Redis");
-});
-
-connection.on("error", (err) => {
-    console.error("Redis connection error in Worker:", err);
-});
+console.log(process.env.REDIS_URL)
 
 const worker = new Worker(
-    "file-upload-queue",
+    'file-upload-queue',
     async (job) => {
         console.log("Job received : ", job.data)
-        const { userId, filename, path } = job.data;
+        const { userId, fileUrl, fileName } = job.data;
 
-        if (!fs.existsSync(path)) {
-            throw new Error(`File does not exist at path: ${path}`);
+        const tempPath = path.join(os.tmpdir(), `${uuidv4()}.pdf`);
+        const writer = fs.createWriteStream(tempPath);
+        const response = await axios.get(fileUrl, { responseType: "stream" });
+        response.data.pipe(writer);
+
+        await new Promise((resolve, reject) => {
+            writer.on("finish", resolve);
+            writer.on("error", reject);
+        });
+
+        if (!fs.existsSync(tempPath)) {
+            throw new Error(`File does not exist at path: ${tempPath}`);
         }
 
-        const loader = new PDFLoader(path);
+        const loader = new PDFLoader(tempPath);
         const docs = await loader.load();
 
         const textSplitter = new CharacterTextSplitter({
@@ -76,20 +71,16 @@ const worker = new Worker(
 
         const splitDocs = await textSplitter.splitDocuments(docs);
 
-        // Clean + filter empty/invalid content (remains unchanged)
         const cleanedDocs = splitDocs.filter(
             (doc) => doc.pageContent && doc.pageContent.trim().length > 0
         );
 
-        // Optional: truncate overly long chunks to 8000 characters
-        // IMPORTANT: Ensure this is a Langchain Document object for PineconeVectorStore
         const truncatedDocs = cleanedDocs.map((doc) => {
             return new Document({ // <--- Changed this back to 'new Document()'
                 pageContent: doc.pageContent.trim().slice(0, 8000),
                 metadata: {
                     userId,
-                    filename,
-                    // Preserve original metadata from PDFLoader if desired
+                    fileName,
                     pdf: doc.metadata?.pdf,
                     loc: doc.metadata?.loc,
                     source: doc.metadata?.source
@@ -103,24 +94,25 @@ const worker = new Worker(
             console.log("Expected Pinecone Namespace:", userId);
         } else {
             console.warn("No documents to add after splitting and cleaning.");
-            // Consider if you want to throw an error or just complete the job if no valid docs
-            return; // Exit if no documents to process
+            return;
         }
 
         const embeddings = new GoogleEmbeddings(process.env.GOOGLE_API_KEY);
 
-        // --- Pinecone Specific Code ---
-        const pinecone = new Pinecone(); // Initialize the Pinecone client
-        // Ensure process.env.PINECONE_INDEX is set in your .env file
-        const index = pinecone.Index(process.env.PINECONE_INDEX); // Get the specific index instance
+
+        const pinecone = new Pinecone(); 
+        const index = pinecone.Index(process.env.PINECONE_INDEX); 
 
         await PineconeStore.fromDocuments(truncatedDocs, embeddings, {
             pineconeIndex: index,
-            namespace: userId // Use userId as the namespace for isolation
+            namespace: userId 
         });
-        // -----------------------------
 
         console.log("Docs added to Pinecone under namespace:", userId);
+
+        fs.unlink(tempPath, (err) => {
+            if (err) console.warn("Failed to delete temp file:", err.message);
+        });
     },
     { connection }
 );

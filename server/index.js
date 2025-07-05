@@ -5,9 +5,13 @@ import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Pinecone } from '@pinecone-database/pinecone';
-import { PineconeStore } from "@langchain/pinecone"; 
+import { PineconeStore } from "@langchain/pinecone";
 import { requireAuth } from "@clerk/express";
+import { uploadRouter } from "./uploadthing.config.js"
+import { bullBoardRouter } from './bullboard.js';
+import { connection } from './redis.js';
 import 'dotenv/config';
+import { log } from 'console';
 
 
 class GoogleEmbeddings {
@@ -35,18 +39,6 @@ class GoogleEmbeddings {
     }
 }
 
-const connection = new IORedis(process.env.REDIS_URL, {
-  tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  keepAlive: 10000,
-  retryStrategy: times => {
-    const delay = Math.min(times * 50, 2000); // Exponential backoff up to 2 seconds
-    console.warn(`Redis reconnecting (attempt ${times}). Retrying in ${delay}ms...`);
-    return delay;
-  }
-});
-
 connection.on("error", (err) => {
     console.error("Redis connection error in BullMQ:", err);
 });
@@ -56,56 +48,53 @@ connection.on("connect", () => {
 
 const queue = new Queue("file-upload-queue", { connection });
 
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/')
-    },
-    filename: function (req, file, cb) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-        cb(null, file.originalname + '-' + uniqueSuffix)
-    }
-})
-
-const upload = multer({ storage: storage });
-
 const app = express();
 app.use(cors());
+app.use(express.json());
+
+app.use('/admin/queues', bullBoardRouter)
 
 app.get('/', (req, res) => {
     return res.json({ message: "Everything is working fine!" });
 })
 
-app.post('/upload/pdf', upload.single('pdf'), requireAuth(), async (req, res) => {
+app.post('/upload/pdf', requireAuth(), async (req, res) => {
     console.log("/upload/pdf endpoint hit");
-    console.log("file: ", req.file)
-    const { userId } = req.auth;
+
+    const { userId } = await req.auth();
+    const { fileUrl, fileName } = req.body;
 
     if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
     }
 
+    if (!fileUrl) {
+        return res.status(400).json({ message: "Missing fileUrl" });
+    }
+
     try {
-        console.log('File received:', req.file);
+        console.log('File URL received:', fileUrl);
 
         await queue.add('pdf-upload', {
-            filename: req.file.filename,
-            path: req.file.path,
+            fileUrl,
+            fileName,
             userId
         });
 
         console.log('Job added to queue');
 
-        return res.status(200).json({ message: 'File uploaded successfully' });
+        return res.status(200).json({ message: 'File uploaded and queued successfully' });
     } catch (err) {
         console.error('Error handling upload:', err);
         return res.status(500).json({ message: 'Internal server error' });
     }
 });
 
+
 app.get('/chat', requireAuth(), async (req, res) => {
     console.log("/chat endpoint hit")
 
-    const { userId } = req.auth; 
+    const { userId } = req.auth;
     console.log("user id", userId)
     console.log("Type of userId:", typeof userId);
 
@@ -130,7 +119,7 @@ app.get('/chat', requireAuth(), async (req, res) => {
 
         const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
             pineconeIndex: index,
-            namespace: userId 
+            namespace: userId
         });
 
         const retriever = vectorStore.asRetriever({
